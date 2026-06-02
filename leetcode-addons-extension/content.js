@@ -244,6 +244,72 @@ color: white;
 
     // QUES PER DAY
 
+    let activeDaysCache = null;
+
+    async function getLifetimeActiveDays() {
+        if (activeDaysCache !== null) {
+            return activeDaysCache;
+        }
+
+        const username = location.pathname.split('/')[2];
+
+        async function fetchYear(year) {
+            const res = await fetch('https://leetcode.com/graphql/', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'content-type': 'application/json'
+                },
+                body: JSON.stringify({
+                    operationName: 'userProfileCalendar',
+                    variables: {
+                        username,
+                        year
+                    },
+                    query: `
+                query userProfileCalendar($username: String!, $year: Int) {
+                  matchedUser(username: $username) {
+                    userCalendar(year: $year) {
+                      activeYears
+                      submissionCalendar
+                    }
+                  }
+                }
+                `
+                })
+            });
+
+            return res.json();
+        }
+
+        const currentYear = new Date().getFullYear();
+
+        const first = await fetchYear(currentYear);
+
+        const years =
+            first.data.matchedUser.userCalendar.activeYears || [];
+
+        const activeDays = new Set();
+
+        const responses = await Promise.all(
+            years.map(year => fetchYear(year))
+        );
+
+        for (const data of responses) {
+            const calendar = JSON.parse(
+                data.data.matchedUser.userCalendar.submissionCalendar || "{}"
+            );
+
+            Object.keys(calendar).forEach(day => {
+                activeDays.add(day);
+            });
+        }
+
+        activeDaysCache = activeDays.size;
+
+        return activeDaysCache;
+    }
+
     function createD(ques, days) {
         const d = document.createElement('div');
 
@@ -252,7 +318,7 @@ color: white;
 
         d.innerHTML = `
         <span class="text-label-3 dark:text-dark-label-3">
-            Questions/day:
+            Avg Solves/Day:
         </span>
         <span class="font-medium text-label-2 dark:text-dark-label-2">
             ${days > 0 ? (ques / days).toFixed(2) : '0.00'}
@@ -262,57 +328,79 @@ color: white;
         return d;
     }
 
-    function addD() {
-        if (document.getElementById('questions-per-day')) return true;
+    let qpdRendering = false;
 
-        const activeDaysLabel = [...document.querySelectorAll('span')]
-            .find(el => el.textContent.includes('Total active days'));
+    async function addD() {
+        if (!location.pathname.startsWith('/u/')) {
+            return false;
+        }
 
-        if (!activeDaysLabel) return false;
+        if (document.getElementById('questions-per-day')) {
+            return true;
+        }
 
-        const activeDaysElement = activeDaysLabel.nextElementSibling;
+        if(qpdRendering) return false;
 
-        if (!activeDaysElement) return false;
+        qpdRendering = true;
 
-        const activeDays = parseInt(
-            activeDaysElement.textContent.trim(),
-            10
-        );
+        try {
+            const activeDaysLabel = [...document.querySelectorAll('span')]
+                .find(el => el.textContent.includes('Total active days'));
 
-        if (!activeDays || activeDays <= 0) return false;
+            if (!activeDaysLabel) {
+                return false;
+            }
 
-        const statsBar = activeDaysLabel.closest('div.flex.items-center.text-xs');
+            const statsBar =
+                activeDaysLabel.closest('div.flex.items-center.text-xs') ||
+                activeDaysLabel.parentElement?.parentElement;
 
-        console.log("statsBar:", statsBar);
+            if (!statsBar) {
+                return false;
+            }
 
-        if (!statsBar) return false;
+            const solvedElement = [...document.querySelectorAll('span')]
+                .find(el =>
+                    /^\d+$/.test(el.textContent.trim()) &&
+                    el.parentElement?.textContent.includes('/')
+                );
 
-        console.log("activeDaysText:", activeDays);
+            if (!solvedElement) {
+                return false;
+            }
 
-        const solvedElement = [...document.querySelectorAll('span')]
-            .find(el =>
-                /^\d+$/.test(el.textContent) &&
-                el.parentElement?.textContent.includes('/')
+            const solved = parseInt(
+                solvedElement.textContent.trim(),
+                10
             );
 
-        console.log("solvedElement:", solvedElement);
+            // create placeholder immediately
+            const placeholder = createD(0, 1);
 
-        if (!solvedElement) return false;
+            placeholder.querySelectorAll('span')[1].textContent = '...';
 
-        const solved = parseInt(
-            solvedElement.textContent.trim(),
-            10
-        );
+            statsBar.prepend(placeholder);
 
-        statsBar.prepend(
-            createD(solved, activeDays)
-        );
+            // fetch in background
+            const activeDays = await getLifetimeActiveDays();
 
-        return true;
+            if (!activeDays || activeDays <= 0) {
+                placeholder.querySelectorAll('span')[1].textContent = 'N/A';
+                return false;
+            }
+
+            // update placeholder
+            placeholder.querySelectorAll('span')[1].textContent =
+                (solved / activeDays).toFixed(2);
+
+            return true;
+        } finally {
+            qpdRendering = false;
+        }
     }
 
 
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver(async () => {
         addD();
         addButton();
     });
