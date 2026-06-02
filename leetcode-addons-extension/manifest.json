@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "LeetCode Addons",
+  "version": "1.0",
+  "description": "More Extra LeetCode Features",
+
+  "permissions": [],
+
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://leetcode-complexity-analyzer.onrender.com/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://leetcode.com//*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "icons": {
+    "128": "icon.png"
+  }
+}
